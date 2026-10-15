@@ -1,0 +1,42 @@
+---
+- name: Audit et sauvegarde des routeurs FRRouting
+  hosts: routers
+  gather_facts: false
+
+  tasks:
+    - name: Recuperer la configuration active
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ container_id }}"
+          - vtysh
+          - -c
+          - show running-config
+      register: router_config
+      changed_when: false
+
+    - name: Sauvegarder la configuration sur la VM
+      ansible.builtin.copy:
+        content: "{{ router_config.stdout }}\n"
+        dest: "{{ playbook_dir }}/../backups/{{ inventory_hostname }}.conf"
+        mode: "0600"
+
+    - name: Recuperer les voisins OSPF
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ container_id }}"
+          - vtysh
+          - -c
+          - show ip ospf neighbor
+      register: ospf_neighbors
+      changed_when: false
+
+    - name: Afficher le resultat de l'audit
+      ansible.builtin.debug:
+        msg:
+          - "Routeur : {{ inventory_hostname }}"
+          - "Configuration sauvegardee dans backups/{{ inventory_hostname }}.conf"
+          - "{{ ospf_neighbors.stdout }}"

@@ -1,0 +1,12 @@
+---
+- name: Generer les configurations FRRouting
+  hosts: routers
+  gather_facts: false
+
+  tasks:
+    - name: Generer la configuration depuis Jinja2
+      ansible.builtin.template:
+        src: ../templates/frr.conf.j2
+        dest: "{{ playbook_dir }}/../rendered/{{ inventory_hostname }}.conf"
+        newline_sequence: "\n"
+        mode: "0644"

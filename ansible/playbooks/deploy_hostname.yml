@@ -1,0 +1,108 @@
+---
+- name: Deploiement controle du hostname R2
+  hosts: R2
+  gather_facts: false
+
+  vars:
+    new_hostname: R2-NETOPS
+
+  tasks:
+    - name: Lire la configuration avant modification
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ container_id }}"
+          - vtysh
+          - -c
+          - show running-config
+      register: before_config
+      changed_when: false
+
+    - name: Recuperer le hostname actuel
+      ansible.builtin.set_fact:
+        old_hostname: >-
+          {{ before_config.stdout |
+             regex_search('(?m)^hostname\s+\S+') |
+             regex_replace('^hostname\s+', '') }}
+
+    - name: Afficher le changement prevu
+      ansible.builtin.debug:
+        msg: "{{ old_hostname }} -> {{ new_hostname }}"
+
+    - name: Deployer et verifier avec rollback
+      when: old_hostname != new_hostname
+      block:
+        - name: Appliquer le hostname
+          ansible.builtin.command:
+            argv:
+              - docker
+              - exec
+              - "{{ container_id }}"
+              - vtysh
+              - -c
+              - "configure terminal"
+              - -c
+              - "hostname {{ new_hostname }}"
+          register: deployment
+          changed_when: true
+          failed_when: deployment.rc != 0
+
+        - name: Verifier la configuration appliquee
+          ansible.builtin.command:
+            argv:
+              - docker
+              - exec
+              - "{{ container_id }}"
+              - vtysh
+              - -c
+              - show running-config
+          register: after_config
+          changed_when: false
+
+        - name: Confirmer le nouveau hostname
+          ansible.builtin.assert:
+            that:
+              - "('hostname ' ~ new_hostname) in after_config.stdout"
+            fail_msg: "Hostname non applique"
+
+      rescue:
+        - name: Restaurer le hostname precedent
+          ansible.builtin.command:
+            argv:
+              - docker
+              - exec
+              - "{{ container_id }}"
+              - vtysh
+              - -c
+              - "configure terminal"
+              - -c
+              - "hostname {{ old_hostname }}"
+
+        - name: Signaler l'echec du deploiement
+          ansible.builtin.fail:
+            msg: "Deploiement echoue. Restauration du hostname precedent tentee."
+
+    - name: Verifier les voisins OSPF
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ container_id }}"
+          - vtysh
+          - -c
+          - show ip ospf neighbor
+      register: ospf_state
+      changed_when: false
+
+    - name: Confirmer les adjacences OSPF
+      ansible.builtin.assert:
+        that:
+          - "'1.1.1.1' in ospf_state.stdout"
+          - "'3.3.3.3' in ospf_state.stdout"
+          - "(ospf_state.stdout | regex_findall('Full/')) | length == 2"
+        fail_msg: "Les adjacences OSPF de R2 ne sont pas toutes FULL"
+
+    - name: Afficher le resultat
+      ansible.builtin.debug:
+        msg: "Deploiement termine. Hostname {{ new_hostname }}, OSPF verifie."

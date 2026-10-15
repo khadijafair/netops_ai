@@ -1,0 +1,83 @@
+---
+- name: Controlled FRR interface recovery (manual approval only)
+  hosts: routers
+  gather_facts: false
+  serial: 1
+  vars:
+    approved: false
+    target_router: ""
+    target_interface: ""
+    allowed_interfaces:
+      R1: [eth1]
+      R2: [eth0, eth1]
+      R3: [eth0]
+  tasks:
+    - name: Require explicit approval and bounded target
+      ansible.builtin.assert:
+        that:
+          - approved | bool
+          - target_router == inventory_hostname
+          - target_interface in allowed_interfaces[inventory_hostname]
+          - ansible_limit is defined
+          - ansible_limit == target_router
+        fail_msg: "BLOCKED: specify --limit ROUTER and -e 'approved=true target_router=ROUTER target_interface=ethN'"
+
+    - name: Check interface state before any change
+      ansible.builtin.command:
+        argv: [docker, exec, "{{ container_id }}", ip, -j, link, show, dev, "{{ target_interface }}"]
+      register: before
+      changed_when: false
+
+    - name: Parse interface flags
+      ansible.builtin.set_fact:
+        was_up: "{{ 'UP' in ((before.stdout | from_json)[0].flags) }}"
+
+    - name: Refuse to modify an already enabled interface
+      ansible.builtin.assert:
+        that: not (was_up | bool)
+        fail_msg: "Interface already administratively UP: no action justified"
+
+    - name: Save running configuration snapshot on VM
+      ansible.builtin.command:
+        argv: [docker, exec, "{{ container_id }}", vtysh, -c, 'show running-config']
+      register: config_before
+      changed_when: false
+
+    - name: Write protected backup
+      ansible.builtin.copy:
+        content: "{{ config_before.stdout }}\n"
+        dest: "{{ playbook_dir }}/../backups/{{ inventory_hostname }}-before-interface-recovery.conf"
+        mode: '0600'
+
+    - name: Apply and validate with rollback on failure
+      block:
+        - name: Enable target interface (Linux namespace only)
+          ansible.builtin.command:
+            argv: [docker, exec, "{{ container_id }}", ip, link, set, dev, "{{ target_interface }}", up]
+          changed_when: true
+
+        - name: Check interface now UP
+          ansible.builtin.command:
+            argv: [docker, exec, "{{ container_id }}", ip, -j, link, show, dev, "{{ target_interface }}"]
+          register: after
+          changed_when: false
+
+        - name: Assert administrative UP
+          ansible.builtin.assert:
+            that: "'UP' in ((after.stdout | from_json)[0].flags)"
+
+      rescue:
+        - name: Restore previous DOWN state
+          ansible.builtin.command:
+            argv: [docker, exec, "{{ container_id }}", ip, link, set, dev, "{{ target_interface }}", down]
+          register: rollback
+          changed_when: true
+          ignore_errors: true
+
+        - name: Stop after attempted rollback
+          ansible.builtin.fail:
+            msg: "Validation failed. Rollback attempted; verify interface and OSPF manually."
+
+    - name: Explain follow-up
+      ansible.builtin.debug:
+        msg: "Interface administratively UP. OSPF convergence and end-to-end connectivity MUST be checked separately."

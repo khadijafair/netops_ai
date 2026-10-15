@@ -1,0 +1,32 @@
+---
+- name: Valider les configurations candidates
+  hosts: routers
+  gather_facts: false
+
+  tasks:
+    - name: Verifier la presence du fichier genere
+      ansible.builtin.stat:
+        path: "{{ playbook_dir }}/../rendered/{{ inventory_hostname }}.conf"
+      register: candidate
+
+    - name: Arreter si la configuration est absente
+      ansible.builtin.assert:
+        that:
+          - candidate.stat.exists
+        fail_msg: "Configuration candidate absente pour {{ inventory_hostname }}"
+
+    - name: Lire la configuration candidate
+      ansible.builtin.slurp:
+        src: "{{ playbook_dir }}/../rendered/{{ inventory_hostname }}.conf"
+      register: candidate_content
+
+    - name: Verifier les parametres essentiels
+      ansible.builtin.assert:
+        that:
+          - "'hostname ' ~ inventory_hostname in config_text"
+          - "'ospf router-id ' ~ network[inventory_hostname].router_id in config_text"
+          - "'router ospf' in config_text"
+          - "network[inventory_hostname].ospf_networks | length > 0"
+        fail_msg: "Configuration candidate incomplete pour {{ inventory_hostname }}"
+      vars:
+        config_text: "{{ candidate_content.content | b64decode }}"

@@ -1,0 +1,24 @@
+name: NetOps-AI CI
+on:
+  push:
+  pull_request:
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install runtime and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install networkx requests fastapi pydantic numpy pandas scikit-learn joblib PyYAML jinja2 ansible-core
+      - name: Compile project Python
+        run: python -m compileall -q aiops diagnosis remediation alerting tests
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Ansible syntax checks
+        run: |
+          ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/interface_recovery.yml --syntax-check
+          ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/verify_network.yml --syntax-check

@@ -1,0 +1,21 @@
+frr version 10.7.1_git
+frr defaults traditional
+hostname {{ inventory_hostname }}
+!
+{% for interface in network[inventory_hostname].interfaces %}
+interface {{ interface.name }}
+ ip address {{ interface.address }}
+{% if interface.ospf_passive | default(false) %}
+ ip ospf passive
+{% endif %}
+exit
+!
+{% endfor %}
+router ospf
+ ospf router-id {{ network[inventory_hostname].router_id }}
+{% for subnet in network[inventory_hostname].ospf_networks %}
+ network {{ subnet }} area 0
+{% endfor %}
+exit
+!
+end

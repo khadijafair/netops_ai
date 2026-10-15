@@ -1,0 +1,61 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+secrets/
+credentials/
+
+# Runtime data
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.log
+logs/
+backups/
+ansible/backups/
+ansible/rendered/
+
+# ML artifacts and collected data
+aiops/data/
+aiops/models/
+aiops/model/
+*.joblib
+*.pkl
+*.parquet
+
+# Local infrastructure
+.vscode/
+.idea/
+.DS_Store
+*.bak
+*.bak.*
+*.swp
+
+# Temporary scripts
+netops_*block.sh
+netops_*integration.sh
+netops_*consolidation.sh
+netops_*finalisation.sh
+netops_*delivery*.sh
+netops_fault_drill.sh
+
+# Generated network snapshots
+diagnostic_report.json
+network_state.json

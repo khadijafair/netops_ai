@@ -1,0 +1,17 @@
+---
+- name: Verify network without modifications
+  hosts: routers
+  gather_facts: false
+  tasks:
+    - name: Collect OSPF neighbors in JSON
+      ansible.builtin.command:
+        argv: [docker, exec, "{{ container_id }}", vtysh, -c, 'show ip ospf neighbor json']
+      register: ospf
+      changed_when: false
+    - name: Confirm FRR JSON parses
+      ansible.builtin.assert:
+        that:
+          - (ospf.stdout | from_json).neighbors is defined
+    - name: Print current neighbors
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} neighbors: {{ ((ospf.stdout | from_json).neighbors | default({})).keys() | list }}"

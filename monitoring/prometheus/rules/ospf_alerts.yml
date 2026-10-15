@@ -1,0 +1,29 @@
+
+groups:
+  - name: netops-ospf
+    interval: 15s
+    rules:
+      - alert: OSPFNeighborDown
+        expr: |
+          netops_ospf_full_neighbors
+          < netops_ospf_expected_neighbors
+        for: 30s
+        labels:
+          severity: critical
+          component: ospf
+        annotations:
+          summary: "Perte de voisin OSPF sur {{ $labels.router }}"
+          description: "Le nombre de voisins FULL est inférieur au nombre attendu."
+
+      - alert: OSPFExporterDown
+        expr: |
+          up{job="netops-ospf"} == 0
+          or
+          netops_router_scrape_success == 0
+        for: 30s
+        labels:
+          severity: warning
+          component: monitoring
+        annotations:
+          summary: "Problème de collecte NetOps"
+          description: "Prometheus ne reçoit plus les métriques ou la collecte d'un routeur échoue."

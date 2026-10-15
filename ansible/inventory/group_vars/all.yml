@@ -1,0 +1,36 @@
+---
+network:
+  R1:
+    router_id: 1.1.1.1
+    interfaces:
+      - name: eth1
+        address: 10.0.12.1/30
+      - name: eth2
+        address: 192.168.10.1/24
+        ospf_passive: true
+    ospf_networks:
+      - 10.0.12.0/30
+      - 192.168.10.0/24
+
+  R2:
+    router_id: 2.2.2.2
+    interfaces:
+      - name: eth0
+        address: 10.0.12.2/30
+      - name: eth1
+        address: 10.0.23.1/30
+    ospf_networks:
+      - 10.0.12.0/30
+      - 10.0.23.0/30
+
+  R3:
+    router_id: 3.3.3.3
+    interfaces:
+      - name: eth0
+        address: 10.0.23.2/30
+      - name: eth1
+        address: 192.168.20.1/24
+        ospf_passive: true
+    ospf_networks:
+      - 10.0.23.0/30
+      - 192.168.20.0/24
