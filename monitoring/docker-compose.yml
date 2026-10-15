@@ -34,7 +34,7 @@ services:
     ports:
       - "9093:9093"
     volumes:
-      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./alertmanager/alertmanager.local.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager
     extra_hosts:
       - "host.docker.internal:host-gateway"

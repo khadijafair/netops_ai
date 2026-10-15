@@ -59,3 +59,20 @@ netops_fault_drill.sh
 # Generated network snapshots
 diagnostic_report.json
 network_state.json
+
+# Local Alertmanager SMTP configuration
+monitoring/alertmanager/alertmanager.local.yml
+monitoring/alertmanager/alertmanager.yml.backup
+
+# ML V2
+ml_v2/models/*.joblib
+ml_v2/results/*.csv
+ml_v2/results/*.json
+__pycache__/
+*.pyc
+
+# NetOps-AI V2 local environment
+ansible/inventory/hosts_v2.json
+topology/backups/
+ml_v2/results/
+ml_v2/models/

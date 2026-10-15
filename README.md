@@ -1,105 +1,228 @@
-# NetOps-AI — Network Automation, Observability & Incident Diagnosis
+# NetOps-AI — Network Observability, Root Cause Analysis & Controlled Remediation
 
-A reproducible network operations lab combining **GNS3, FRRouting (OSPF), Prometheus, Grafana, Alertmanager, Python/FastAPI, NetworkX and Ansible**. It detects OSPF adjacency failures, analyzes their network impact and supports **operator-approved** remediation.
+**NetOps-AI** is a GNS3-based network operations and AIOps laboratory combining **FRRouting/OSPF, Prometheus, Grafana, Alertmanager, Python/FastAPI, NetworkX, experimental machine learning, and Ansible**. It grew from a three-router prototype (V1) into a redundant six-router network (V2) with live diagnosis and human-approved recovery.
 
-> **Scope:** Validated as a three-router GNS3 laboratory prototype, not a production-ready autonomous remediation platform. ML anomaly scoring is experimental and is explicitly disabled as an automated decision source when data quality is insufficient.
+> **Status:** Validated laboratory prototype, not a production-ready autonomous remediation system. Machine learning is experimental and never authorizes network changes.
 
 ## Architecture
 
 ```text
-LAN 192.168.10.0/24                           LAN 192.168.20.0/24
-         |                                               |
-        R1 ----------- R2 ----------- R3
-             OSPF            OSPF
-          10.0.12.0/30     10.0.23.0/30
+              GNS3 / FRRouting / OSPF
+                         |
+          +--------------+---------------+
+          |                              |
+    OSPF metrics                    Network state
+          |                              |
+      Prometheus                 Python collectors
+       /      \                         |
+  Grafana    Alertmanager          RCA / NetworkX
+                  |                      |
+           FastAPI incidents       Recovery proposal
+                                         |
+                                  Human approval
+                                         |
+                                      Ansible
+                                         |
+                                Interface verification
+                                         |
+                                 OSPF convergence
 
-FRRouting/GNS3 -- OSPF exporter --> Prometheus --> Grafana
-                                           |--> Alertmanager --> FastAPI incidents
-FRRouting/GNS3 -- Python collectors --> NetworkX RCA --> remediation policy
-                                                       | (manual approval)
-                                                       v
-                                                     Ansible
-Prometheus historical metrics --> Isolation Forest --> quality gate
+  Historical and live metrics --> Experimental ML (advisory only)
 ```
 
-## Capabilities
+## Network topology
 
-- **OSPF monitoring:** per-router FULL neighbor counts, expected adjacency counts and scrape status.
-- **Incident diagnosis:** collect FRR neighbor JSON and Linux interface state; identify failed adjacencies and disconnected components using NetworkX.
-- **Root-cause analysis:** distinguish an administratively DOWN interface, missing/mismatched addressing and unresolved OSPF/link problems; preserve evidence and confidence levels.
-- **Controlled remediation:** Ansible interface recovery requires explicit operator approval and bounded router/interface targets; configuration backup and rollback attempt on failed local validation.
-- **Observability:** Prometheus rules, Alertmanager receiver, Grafana datasource provisioning and FastAPI endpoints.
-- **Experimental anomaly detection:** Isolation Forest with time-ordered train/test split and a quality gate; ML scores are not used to authorize remediation.
+### V1 — Three-router foundation
+
+```text
+LAN 192.168.10.0/24                        LAN 192.168.20.0/24
+         |                                          |
+        R1 ----------- R2 ----------- R3
+             OSPF             OSPF
+         10.0.12.0/30      10.0.23.0/30
+```
+
+V1 established OSPF neighbor monitoring, alert collection, NetworkX-based impact analysis, root-cause identification, operator-approved interface recovery, and an anomaly-detection quality gate.
+
+### V2 — Six-router redundant lab
+
+```text
+           R1 -------- R2 -------- R3
+            |           |           |
+            |           |           |
+           R4 -------- R5 -------- R6
+```
+
+Seven inter-router links form the V2 topology:
+
+| Link | Subnet | Interfaces |
+| --- | --- | --- |
+| R1–R2 | `10.0.12.0/30` | R1 `eth1` – R2 `eth0` |
+| R2–R3 | `10.0.23.0/30` | R2 `eth1` – R3 `eth0` |
+| R1–R4 | `10.0.14.0/30` | R1 `eth3` – R4 `eth0` |
+| R2–R5 | `10.0.25.0/30` | R2 `eth2` – R5 `eth2` |
+| R3–R6 | `10.0.36.0/30` | R3 `eth3` – R6 `eth1` |
+| R4–R5 | `10.0.45.0/30` | R4 `eth1` – R5 `eth0` |
+| R5–R6 | `10.0.56.0/30` | R5 `eth1` – R6 `eth0` |
+
+OSPF provides dynamic routing and alternate paths. A controlled R2–R3 link-failure experiment demonstrated rerouting through the redundant topology.
+
+## Technology stack
+
+| Area | Technologies |
+| --- | --- |
+| Network simulation | GNS3, VMware, Docker |
+| Routing | FRRouting, OSPF |
+| Observability | Prometheus, Grafana, Alertmanager |
+| APIs | Python, FastAPI, Uvicorn |
+| Diagnosis | NetworkX, FRR CLI, Linux interface inspection |
+| Experimental ML | Scikit-learn, Random Forest, Isolation Forest |
+| Automation | Ansible, Python |
+| Validation | Python `unittest`, GitHub Actions |
+
+## Features
+
+### Monitoring and incident collection
+
+- OSPF FULL-neighbor counts, expected adjacency counts, and scrape-status monitoring.
+- Prometheus metrics and Grafana dashboards.
+- Alertmanager forwarding to a FastAPI incident receiver.
+- Health checks for the incident API (`127.0.0.1:8001/health`) and experimental ML API (`127.0.0.1:8002/health`).
+
+### Root-cause analysis
+
+**V1** uses FRR neighbor information, interface state, addressing checks, and NetworkX topology analysis to correlate incidents, identify supported causes, and estimate network impact. It can distinguish administrative interface failures, addressing issues, and unresolved OSPF/link faults.
+
+**V2** inspects the six running GNS3/FRR containers and identifies administratively disabled interfaces on the seven expected inter-router links. A diagnosis records the router, interface, link, evidence, likely cause, and proposed recovery. Its currently validated live remediation case is **administrative interface shutdown**, not arbitrary network faults.
+
+### Controlled remediation
+
+```text
+Fault → RCA → Proposed action → Human approval → Ansible → Interface UP → OSPF check
+```
+
+The V2 Ansible playbook enforces an explicit approval flag, exact target limitation, and an allowlist of eligible interfaces. It rejects unnecessary recovery when the interface is already administratively UP, saves the FRR running configuration, and attempts to restore the original administrative DOWN state if local verification fails.
+
+**Safety boundary:** The saved FRR configuration is a snapshot, not a fully automated configuration rollback. OSPF convergence is checked separately. The standalone drill requests interactive approval; proposed commands must not be treated as authorization.
+
+## Experimental machine learning
+
+**V1:** Isolation Forest explored OSPF metric anomaly scoring with a time-ordered split. A documented run contained **1,619 metric rows** (1,254 healthy training rows and 324 test rows), using `neighbor_ratio`, `neighbor_deficit`, and `scrape_success`. Insufficient variation in the historical test data triggered the quality gate `insufficient_variability`; automated ML decisions were disabled.
+
+**V2:** Random Forest classification and Isolation Forest anomaly scoring were explored alongside live metric collection. Initial classification labels were derived from the experiment scenarios/features, so apparently high classification metrics are **not independent evidence of real-world detection accuracy**. Isolation Forest performance was also limited. The models remain advisory; neither model authorizes remediation.
+
+## Validated fault-recovery demonstrations
+
+### V1 — R2–R3 failure
+
+1. Baseline OSPF FULL-neighbor counts: R1 = 1, R2 = 2, R3 = 1.
+2. R2 `eth1` was administratively disabled.
+3. RCA identified the R2–R3 OSPF failure and `R2:eth1` as administratively DOWN; the topology split into `{R1,R2}` and `{R3}`.
+4. Operator-approved Ansible recovery restored the interface.
+5. OSPF FULL-neighbor counts returned to 1/2/1 and the follow-up RCA reported a healthy network.
+
+### V2 — R5–R6 recovery (15 October 2026)
+
+A real fault was injected on **R5 `eth1`**, connecting R5 and R6.
+
+| Stage | Observed result |
+| --- | --- |
+| Fault injection | R5 `eth1` administratively DOWN |
+| RCA | `interface:R5:eth1` |
+| Recovery proposal | Restore R5 `eth1` |
+| Authorization | Interactive human approval |
+| Ansible execution | `ok=9`, `changed=2`, `failed=0` |
+| Interface validation | R5 `eth1` administratively UP |
+| OSPF validation | R5: 3 FULL neighbors; R6: 2 FULL neighbors |
+| Final RCA | 0 remaining detected administrative-interface incidents |
+
+This validates one real, controlled interface-recovery workflow in the lab; it does not demonstrate recovery from every possible fault or full production resilience.
 
 ## Repository layout
 
-| Directory | Purpose |
-|---|---|
-| `ansible/` | Inventory, templates, network checks and controlled recovery |
-| `monitoring/` | Prometheus, Grafana, Alertmanager and OSPF exporter |
-| `alerting/` | FastAPI alert receiver and incident endpoints |
-| `diagnosis/` | Network graph, interface checks, correlation, RCA and history |
-| `remediation/` | Policy and preflight safeguards |
-| `aiops/` | Metrics collection, model training, evaluation and quality gate |
-| `tests/` | Unit tests |
-| `docs/` | Design and validation evidence |
-| `.github/workflows/` | Continuous integration |
+```text
+netops-ai/
+├── aiops/                 # V1 anomaly scoring and quality gate
+├── alerting/              # FastAPI alert receiver
+├── ansible/               # Inventory, checks, controlled recovery
+├── diagnosis/             # V1 RCA, topology and history
+├── docs/                  # Design and validation records
+├── ml_v2/                 # V2 experiments, live RCA and integration
+├── monitoring/            # Prometheus, Grafana and Alertmanager
+├── remediation/           # V1 recovery policy and preflight checks
+├── reports/               # Validation and delivery checks
+├── tests/                 # Automated unit tests
+├── topology/              # V2 topology and OSPF lab scripts
+├── .github/workflows/     # Continuous integration
+└── README.md
+```
 
-## Requirements and setup
+## Setup and usage
 
-- Linux host or GNS3 VM with Docker, Python 3, and Ansible.
-- GNS3 topology containing three FRRouting routers (`R1`, `R2`, `R3`) with OSPF configured.
-- Prometheus/Grafana/Alertmanager via Docker Compose.
-- Python packages used by the modules, including `fastapi`, `uvicorn`, `networkx`, `requests`, `numpy`, `pandas`, `scikit-learn`, `joblib` and `PyYAML`.
+**Prerequisites:** A Linux/GNS3 VM with Docker, Python 3 and Ansible; running FRRouting router containers; configured OSPF topology; and monitoring services. The repository does **not** provide a one-command deployment of the full GNS3 topology.
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install fastapi uvicorn networkx requests numpy pandas scikit-learn joblib PyYAML jinja2 ansible-core
 python -m unittest discover -s tests -v
-ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/verify_network.yml
 ```
 
-**Environment-specific configuration:** `ansible/inventory/hosts.yml` contains container names for the original GNS3 lab; update these for your own project. The lab's FRR configuration and topology must exist before executing network playbooks. Do not execute recovery against production equipment. Runtime data, local SQLite databases, generated models and logs are excluded from Git.
-
-## API
-
-Run the API in the configured environment:
+Start the V1 incident API (in a separate terminal):
 
 ```bash
 uvicorn alerting.webhook:app --host 127.0.0.1 --port 8001
 ```
 
-Example endpoints: `/health`, `/incidents`, `/diagnosis`, `/rca`, `/rca/capture`, `/rca/history`, `/remediation/plan`, `/aiops/score`, `/aiops/evaluation`.
+For an existing, healthy V2 lab, generate the **local** Ansible inventory and test the non-destructive proposal integration:
 
-## Validated incident drill — 15 October 2026
+```bash
+python ml_v2/prepare_ansible_v2.py
+python ml_v2/rca_v2.py
+ansible-playbook -i ansible/inventory/hosts_v2.json ansible/playbooks/interface_recovery_v2.yml --syntax-check
+```
 
-1. Healthy baseline: OSPF FULL neighbor counts **R1=1, R2=2, R3=1**.
-2. Injected lab fault: administratively disabled **R2 `eth1`**, disconnecting R2–R3.
-3. RCA detected `ospf-link:R2-R3`, identified **`R2:eth1 administratively DOWN`**, and reported the topology split `{R1,R2}` / `{R3}`.
-4. Operator-approved Ansible playbook re-enabled the interface and checked its administrative state.
-5. Independent convergence check confirmed FULL adjacency counts **1/2/1**; follow-up RCA reported `network_status: healthy` with no incidents.
+The inventory includes environment-specific GNS3 container names and is excluded from Git. V1 inventory configuration must likewise match the local environment.
 
-**Limitations:** the drill validates this particular lab failure and recovery, not arbitrary failure remediation, end-to-end client traffic, or all rollback scenarios. Delivery of the specific incident through Alertmanager has not yet been verified independently.
+The controlled V2 fault drill is available via:
 
-## Machine-learning evaluation and limitations
+```bash
+python ml_v2/final_drill.py
+```
 
-- 1,619 collected metric rows; 1,254 healthy training rows and 324 test rows in the latest report.
-- Features: `neighbor_ratio`, `neighbor_deficit`, `scrape_success`.
-- The historical test data showed no rule-positive OSPF deficits; scores were essentially constant and all 324 test rows were initially classified anomalous due to numerical threshold behavior.
-- The quality gate correctly returns **`insufficient_variability`** and `usable_for_automated_decisions: false`. The API reports `anomaly: null` when the model is not validated.
-- **No fault-detection accuracy or F1-score is claimed** without independently labeled fault scenarios.
+**Warning:** This drill intentionally disables a real interface inside the GNS3 lab. Run it only in an isolated environment, with an operator present and a recovery plan. Do not use these commands against production equipment.
 
-## CI and delivery
+## Validation and CI
 
-The GitHub Actions workflow `.github/workflows/netops-ci.yml` runs Python compilation, unit tests and Ansible syntax checks on pushes and pull requests. It does **not** deploy changes to the GNS3 VM. Local remediation requires separate explicit approval.
+- **12/12 existing Python unit tests passed.**
+- **V2 Ansible syntax validation passed.**
+- **Both local API health endpoints responded successfully.**
+- **V1 and V2 controlled interface recovery scenarios were demonstrated.**
+- The GitHub Actions workflow checks Python code, unit tests and Ansible syntax; it does not deploy or run live GNS3 network fault drills.
 
-## Security and operational safeguards
+## Limitations and security
 
-- Do not publish credentials, tokens, private keys, runtime databases or logs.
-- Recovery actions are limited to approved lab interfaces and are not triggered automatically by ML scores.
-- Treat the API and Docker access as lab-only; add authentication, authorization and stronger isolation before any real deployment.
+- V2 RCA primarily detects administrative interface shutdown on expected links.
+- Experimental ML metrics do not establish independently validated detection accuracy.
+- Alertmanager delivery of every tested incident has not been independently verified end-to-end.
+- Recovery is human-approved; no autonomous ML-triggered remediation is claimed.
+- Current rollback is limited and has not been validated across all failure modes.
+- Configuration persistence across GNS3 restarts has not been verified.
+- Runtime databases, credentials, local inventories, logs, model artifacts and backups should remain outside version control.
+- Production use would require authentication, authorization, audited changes, stronger isolation and broader recovery validation.
 
-## Evidence
+## Next steps
 
-See `docs/VALIDATION_FINALE.md`, `docs/README_DELIVERY.md` and the project design documents. Screenshots and exported evidence can be added after review; generated local logs are intentionally excluded from the repository.
+- Independently labeled network-fault dataset and more reliable ML evaluation.
+- RCA coverage for IP addressing, OSPF configuration and additional fault categories in V2.
+- Persisted router configurations and restart testing.
+- Stronger rollback and post-remediation connectivity tests.
+- Unified incident timeline and observability dashboards.
+
+## Supporting documentation
+
+The `docs/` directory contains the original design and validation documents, including `VALIDATION_FINALE.md` and `README_DELIVERY.md`.
+
+---
+
+**NetOps-AI — Network Engineering · Observability · AIOps · Controlled Automation**

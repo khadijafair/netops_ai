@@ -1,0 +1,126 @@
+---
+- name: NetOps-AI V2 controlled interface recovery
+  hosts: routers
+  gather_facts: false
+  serial: 1
+  vars:
+    approved: false
+    target_router: ""
+    target_interface: ""
+    allowed_interfaces:
+      R1: [eth1, eth3]
+      R2: [eth0, eth1, eth2]
+      R3: [eth0, eth3]
+      R4: [eth0, eth1]
+      R5: [eth0, eth1, eth2]
+      R6: [eth0, eth1]
+
+  tasks:
+    - name: Require explicit approval and bounded target
+      ansible.builtin.assert:
+        that:
+          - approved | bool
+          - target_router == inventory_hostname
+          - target_interface in allowed_interfaces[inventory_hostname]
+          - ansible_limit is defined
+          - ansible_limit == target_router
+        fail_msg: "BLOCKED - explicit approval and exact target required"
+
+    - name: Read current interface state
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ container_id }}"
+          - ip
+          - -j
+          - link
+          - show
+          - dev
+          - "{{ target_interface }}"
+      register: before
+      changed_when: false
+
+    - name: Refuse unnecessary recovery
+      ansible.builtin.assert:
+        that:
+          - "'UP' not in ((before.stdout | from_json)[0].flags)"
+        fail_msg: "Interface already administratively UP"
+
+    - name: Save FRR configuration before recovery
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ container_id }}"
+          - vtysh
+          - -c
+          - show running-config
+      register: config_before
+      changed_when: false
+
+    - name: Store protected backup
+      ansible.builtin.copy:
+        content: "{{ config_before.stdout }}\n"
+        dest: "{{ playbook_dir }}/../backups/{{ inventory_hostname }}-v2-before-recovery.conf"
+        mode: '0600'
+
+    - name: Recover interface and validate
+      block:
+        - name: Restore interface
+          ansible.builtin.command:
+            argv:
+              - docker
+              - exec
+              - "{{ container_id }}"
+              - ip
+              - link
+              - set
+              - dev
+              - "{{ target_interface }}"
+              - up
+          changed_when: true
+
+        - name: Read restored interface
+          ansible.builtin.command:
+            argv:
+              - docker
+              - exec
+              - "{{ container_id }}"
+              - ip
+              - -j
+              - link
+              - show
+              - dev
+              - "{{ target_interface }}"
+          register: after
+          changed_when: false
+
+        - name: Verify administrative UP
+          ansible.builtin.assert:
+            that:
+              - "'UP' in ((after.stdout | from_json)[0].flags)"
+
+      rescue:
+        - name: Attempt rollback to previous DOWN state
+          ansible.builtin.command:
+            argv:
+              - docker
+              - exec
+              - "{{ container_id }}"
+              - ip
+              - link
+              - set
+              - dev
+              - "{{ target_interface }}"
+              - down
+          ignore_errors: true
+          changed_when: true
+
+        - name: Report failed recovery
+          ansible.builtin.fail:
+            msg: "Recovery failed. Rollback attempted; manual inspection required."
+
+    - name: Require subsequent OSPF verification
+      ansible.builtin.debug:
+        msg: "Interface UP. Verify OSPF convergence and connectivity separately."
